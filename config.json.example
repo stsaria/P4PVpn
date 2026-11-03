@@ -1,0 +1,21 @@
+{
+  "privateKeyFile": "p4pvpn-private-key",
+  "tunName": "tun0",
+  "listenHost": "0.0.0.0",
+  "listenPort": 5000,
+  "nodeStateFile": "p4pvpn-nodes.json",
+  "nodeStateIntervalSeconds": 10,
+  "heartbeatIntervalSeconds": 5,
+  "heartbeatTimeoutSeconds": 5,
+  "logLevel": "INFO",
+  "bootstrapNodes": [
+    {
+      "ip": "replace-with-ip",
+      "port": 5000,
+      "publicKey": "replace-with-64-hexadecimal-characters"
+    }
+  ],
+  "vpnPeerNodes": [
+    "replace-with-64-hexadecimal-characters"
+  ]
+}
