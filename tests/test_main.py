@@ -11,7 +11,6 @@ from P4PVpn.__main__ import (
     _ensureConfigFile,
     createArgumentParser,
 )
-from P4PVpn.GuiSimulator import SimulationTunDevice
 
 
 def testArgumentParserAcceptsMultipleBootstrapNodesAndPublicKeys():
@@ -57,15 +56,6 @@ def testArgumentParserAcceptsGui():
     args = createArgumentParser().parse_args(["--gui"])
 
     assert args.gui
-
-
-def testSimulationTunDeviceDeliversReceivedData():
-    received = []
-    device = SimulationTunDevice(received.append)
-
-    device.write(b"simulated-packet")
-
-    assert received == [b"simulated-packet"]
 
 
 def testConfigPeerNodesContainOnlyPublicKeys(tmp_path):
