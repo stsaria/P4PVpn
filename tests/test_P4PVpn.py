@@ -6,8 +6,7 @@ import pytest
 from P4PCore.P4PRunner import P4PRunner
 from P4PCore.common.model.NodeIdentify import NodeIdentify
 from P4PCore.plugin.append.nodeGossiper.NodeGossiper import NodeGossiper
-from P4PCore.plugin.append.nodeGossiper.event.NodeGossipRecvedEvent import NodeGossipRecvedEvent
-from P4PCore.plugin.append.nodeGossiper.util.NodeIdentifyConverter import nodeIdentifyToBytes
+from P4PCore.plugin.append.nodeGossiper.event.NodeAddedToGossiperEvent import NodeAddedToGossiperEvent
 
 from P4PVpn.P4PVpn import VPN_PACKET_FLAG, P4PVpn
 from P4PVpn.util import AddrConverter
@@ -31,7 +30,7 @@ class MockTunDevice:
 
 def _makeRealVpn(keySet=None, tunDevice=None):
     runner = P4PRunner()
-    nodeGossiper = NodeGossiper(runner, syncIntervalSeconds=0.05, pingTimeoutSeconds=0.5)
+    nodeGossiper = NodeGossiper(runner, syncIntervalSeconds=0.05)
     tun = tunDevice or MockTunDevice()
     vpn = P4PVpn(
         runner,
@@ -78,9 +77,9 @@ async def testNodeDiscoveryEventStartsSecureHelloForAllowedPeer():
         port=seedRunner.net._protocolV4.transport.get_extra_info("sockname")[1],
         hashableEd25519PublicKey=seedRunner.ed25519Signer.publicKey,
     )
-    event = NodeGossipRecvedEvent(nodeIdentifyToBytes(remoteNode), remoteNode.addr)
+    event = NodeAddedToGossiperEvent(remoteNode)
 
-    await joiningVpn.onNodeGossipRecved(event)
+    joiningVpn.onNodeAddedToGossiper(event)
     await asyncio.sleep(0.3)
 
     assert joiningRunner.secureNet.confirmedAddrsToEd25519PublicKeys

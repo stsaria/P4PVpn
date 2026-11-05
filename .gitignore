@@ -218,3 +218,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Setting files
+p4pvpn-*
+example/p4p-example-private-key

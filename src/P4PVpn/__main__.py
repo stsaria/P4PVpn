@@ -6,6 +6,7 @@ import os
 import secrets
 import signal
 from pathlib import Path
+from collections.abc import Callable
 
 from P4PCore.P4PRunner import P4PRunner
 from P4PCore.common.model.Ed25519Signer import Ed25519Signer
@@ -15,6 +16,7 @@ from P4PCore.plugin.append.nodeGossiper.NodeGossiper import NodeGossiper
 from P4PCore.plugin.append.nodeGossiper.util.NodeIdentifyConverter import bytesToNodeIdentify, nodeIdentifyToBytes
 
 from P4PVpn.P4PVpn import P4PVpn
+from P4PVpn.util import AddrConverter
 
 
 def _parseAddr(value:str) -> tuple[str, int]:
@@ -161,6 +163,11 @@ def _saveNodes(path:Path, nodes:set[NodeIdentify]) -> None:
 
 def createArgumentParser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run a P4P IPv6 overlay VPN.")
+    parser.add_argument(
+        "--gui",
+        action="store_true",
+        help="Run the TUN send/receive simulation GUI.",
+    )
     parser.add_argument("--configFile", type=Path, default=Path("p4pvpn-config.json"))
     parser.add_argument("--nodeStateFile", type=Path, default=Path("p4pvpn-nodes.json"))
     parser.add_argument("--privateKeyFile", type=Path, default=Path("p4pvpn-private-key"))
@@ -216,7 +223,12 @@ async def _saveNodesLoop(nodeGossiper:NodeGossiper, path:Path, intervalSeconds:f
         _saveNodes(path, nodeGossiper.nodeIdentifies)
 
 
-async def amain(args:argparse.Namespace) -> None:
+async def amain(
+    args:argparse.Namespace,
+    tunDevice=None,
+    externalStopEvent=None,
+    onVpnCreated:Callable[[P4PVpn], None] | None=None,
+) -> None:
     _ensureConfigFile(args.configFile)
     if args.nodeStateIntervalSeconds <= 0:
         raise ValueError("nodeStateIntervalSeconds > 0")
@@ -249,13 +261,16 @@ async def amain(args:argparse.Namespace) -> None:
         "Ed25519 public key: %s",
         args.privateKey.publicKey.publicKeyBytes.hex(),
     )
+    logging.getLogger("P4PVpn").info(
+        "Virtual IP: %s",
+        AddrConverter.ed25519PublicKeyToIp(args.privateKey.publicKey),
+    )
     runner = P4PRunner(
         ed25519Signer=args.privateKey,
         netV4ListeningAddr=(args.listenHost, args.listenPort),
     )
     nodeGossiper = NodeGossiper(
-        runner,
-        bootstrapNodes={node.addr for node in registeredNodes},
+        runner
     )
     for node in registeredNodes:
         nodeGossiper.addNode(node)
@@ -265,27 +280,34 @@ async def amain(args:argparse.Namespace) -> None:
         heartbeatIntervalSeconds=args.heartbeatIntervalSeconds,
         heartbeatTimeoutSeconds=args.heartbeatTimeoutSeconds,
         networksNodePublicKeys=publicKeys,
+        tunDevice=tunDevice,
         tunName=args.tunName,
     )
+    if onVpnCreated is not None:
+        onVpnCreated(vpn)
     stopped = asyncio.Event()
     loop = asyncio.get_running_loop()
-    for stopSignal in (signal.SIGINT, signal.SIGTERM):
-        try:
-            loop.add_signal_handler(stopSignal, stopped.set)
-        except NotImplementedError:
-            pass
+    if externalStopEvent is None:
+        for stopSignal in (signal.SIGINT, signal.SIGTERM):
+            try:
+                loop.add_signal_handler(stopSignal, stopped.set)
+            except NotImplementedError:
+                pass
     saveTask = asyncio.create_task(
         _saveNodesLoop(nodeGossiper, args.nodeStateFile, args.nodeStateIntervalSeconds)
     )
     try:
         await vpn.begin()
-        await stopped.wait()
+        if externalStopEvent is None:
+            await stopped.wait()
+        else:
+            while not externalStopEvent.is_set():
+                await asyncio.sleep(0.1)
     finally:
         saveTask.cancel()
         await asyncio.gather(saveTask, return_exceptions=True)
         _saveNodes(args.nodeStateFile, nodeGossiper.nodeIdentifies)
         await vpn.end()
-
 
 def main() -> None:
     args = createArgumentParser().parse_args()

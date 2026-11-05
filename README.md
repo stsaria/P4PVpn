@@ -19,6 +19,24 @@ the persisted node state.
 The TUN interface name is configured with `tunName` in the JSON file or
 `--tunName` on the command line; it defaults to `tun0`.
 
+The [example/](./example/) directory contains a small Linux-only
+`LinuxTunDevice` smoke test. It assigns a public-key-derived IPv6 address to a
+TUN device and forwards packets for that address to `127.0.0.1`.
+
+For development and packet-flow testing, start the TUN simulation GUI with
+`--gui`:
+
+```bash
+python -m P4PVpn --gui
+```
+
+The GUI uses a simulated TUN device instead of `/dev/net/tun`. Enter a virtual
+IPv6 destination and UTF-8 data, then select `TUN から送信` to exercise the
+normal outbound routing path. Select `受信をシミュレート` to inject received
+data into the normal inbound path and display what would be delivered to TUN.
+The VPN still uses the configured NodeGossiper and SecureNet connections, so
+outbound delivery requires the destination peer to be connected.
+
 If `privateKey` is omitted, the program generates an Ed25519 private key on
 first start and saves it to `privateKeyFile`. The saved key is reused on later
 starts so the node's public key remains stable.
