@@ -5,7 +5,6 @@ import os
 import fcntl
 import struct
 import socket
-import subprocess
 
 TUNSETIFF = 0x400454ca
 IFF_TUN = 0x0001
@@ -23,9 +22,10 @@ NLM_F_EXCL = 0x0200
 NLM_F_ACK = 0x0004
 AF_INET6 = 10
 IFA_LOCAL = 2
+DEFAULT_READ_BUFFER_SIZE = 65535
 
 class LinuxTunDevice:
-    def __init__(self, ip:str, onRecvedFunc:Callable[[str, bytes], Awaitable[None]], prefixLen:int=64, ifname:str="tun0", readBufferSize:int = 1024, loop:BaseEventLoop | None = None):
+    def __init__(self, ip:str, onRecvedFunc:Callable[[str, bytes], None], prefixLen:int=64, ifname:str="tun0", readBufferSize:int = DEFAULT_READ_BUFFER_SIZE, loop:BaseEventLoop | None = None):
         if prefixLen <= 0:
             raise ValueError("prefixLen > 0")
         elif readBufferSize <= 0:
@@ -34,7 +34,7 @@ class LinuxTunDevice:
             raise PermissionError("You must create the instance with root permission.")
         
         self._ip:str = ip
-        self._onRecvedFunc:Callable[[str, bytes], Awaitable[None]] = onRecvedFunc
+        self._onRecvedFunc:Callable[[str, bytes], None] = onRecvedFunc
         self._prefixLen:int = prefixLen
         self._ifname:str = ifname
         self._readBufferSize:int = readBufferSize
@@ -94,7 +94,9 @@ class LinuxTunDevice:
                 if version == 6:
                     destIpBytes = packet[24:40]
                     destIp = socket.inet_ntop(socket.AF_INET6, destIpBytes)
-                    asyncio.create_task(self._onRecvedFunc(destIp, packet))
+                    if destIp.startswith("ff"):
+                        return
+                    self._onRecvedFunc(destIp, packet)
             except BlockingIOError:
                 pass
         self._loop.add_reader(self._fd, readCallback)

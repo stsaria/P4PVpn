@@ -1,5 +1,6 @@
 import asyncio
 from asyncio import Task
+import struct
 import uuid
 
 from P4PCore.P4PRunner import P4PRunner
@@ -11,12 +12,14 @@ from P4PCore.common.manager.Events import EventListener
 from P4PCore.core.event.SecureNetStartedToHelloOnRecver import SecureNetStartedToHelloOnRecver
 from P4PCore.core.event.SecureNetFinishedToHelloOnRecverEvent import SecureNetFinishedToHelloOnRecverEvent, SecureNetFinishedToHelloOnRecverEventResult
 from P4PCore.plugin.append.nodeGossiper.event.NodeAddedToGossiperEvent import NodeAddedToGossiperEvent
-from P4PCore.core.protocol.Protocol import SecurePacketElementSize, MAX_DATA_SIZE_ON_ENCRYPTED_AES_EXCLUDING_MAGIC
+from P4PCore.core.protocol.Protocol import MAX_DATA_SIZE_ON_ENCRYPTED_AES_EXCLUDING_MAGIC
 
-from P4PVpn.kernel.LinuxTunDevice import LinuxTunDevice
+from P4PVpn.kernel.LinuxTunDevice import LinuxTunDevice, DEFAULT_READ_BUFFER_SIZE
 from P4PVpn.util import AddrConverter
 
 VPN_PACKET_FLAG = uuid.UUID("c0f6b6cf-04d6-4f4a-9c95-4f770f7a8d1d").bytes
+VPN_FRAGMENT_FLAG = b"\x01"
+VPN_FRAGMENT_HEADER_SIZE = 13
 
 class P4PVpn(NetHandler):
     def __init__(
@@ -42,16 +45,16 @@ class P4PVpn(NetHandler):
         self._heartbeatTasks:dict[tuple[str, int], Task[None]] = {}
         self._secureConnectionTasks:dict[tuple[str, int], Task[None]] = {}
         self._virtualIpToNode:dict[str, NodeIdentify] = {}
+        self._receivedFragments:dict[
+            tuple[tuple[str, int], bytes],
+            tuple[int, dict[int, bytes]]
+        ] = {}
         self._logger = self._runner.getLogger("P4PVpn")
 
         self._tunDevice:LinuxTunDevice = tunDevice or LinuxTunDevice(
             AddrConverter.ed25519PublicKeyToIp(self._runner.ed25519Signer.publicKey),
             self._onTunPacket,
-            readBufferSize=(
-                MAX_DATA_SIZE_ON_ENCRYPTED_AES_EXCLUDING_MAGIC
-                -len(self._runner.magic)
-                -SecurePacketElementSize.UUID
-            ),
+            readBufferSize=DEFAULT_READ_BUFFER_SIZE,
             ifname=tunName
         )
         self._runner.eventsManager.registerListener(self)
@@ -176,18 +179,73 @@ class P4PVpn(NetHandler):
         )
         self._runner.secureNet.bye(node)
 
-    async def _onTunPacket(self, destIp:str, packet:bytes) -> None:
+    def _onTunPacket(self, destIp:str, packet:bytes) -> None:
         node = self._virtualIpToNode.get(destIp)
-        if node is None:
-            return
-        self._runner.secureNet.sendToSecure(
-            VPN_PACKET_FLAG + packet,
-            node
+
+        self._logger.debug(
+            "VPN TX: dest=%s, node=%s, size=%d",
+            destIp,
+            node,
+            len(packet),
         )
+
+        if node is None:
+            self._logger.warning("No VPN peer for destination %s", destIp)
+            return
+            
+        maxPayloadSize = (
+            MAX_DATA_SIZE_ON_ENCRYPTED_AES_EXCLUDING_MAGIC
+            -len(self._runner.magic)
+        )
+        if len(VPN_PACKET_FLAG) + len(packet) <= maxPayloadSize:
+            self._runner.secureNet.sendToSecure(VPN_PACKET_FLAG + packet, node)
+            return
+
+        blockSize = maxPayloadSize - len(VPN_PACKET_FLAG) - VPN_FRAGMENT_HEADER_SIZE
+        if blockSize <= 0:
+            raise ValueError("SecureNet payload is too small for VPN fragments.")
+        fragmentId = uuid.uuid4().bytes[:8]
+        fragmentCount = (len(packet) + blockSize - 1) // blockSize
+        if fragmentCount > 0xffff:
+            raise ValueError("TUN packet has too many fragments.")
+        for fragmentIndex in range(fragmentCount):
+            block = packet[
+                fragmentIndex * blockSize:(fragmentIndex + 1) * blockSize
+            ]
+            fragmentHeader = (
+                VPN_FRAGMENT_FLAG
+                +fragmentId
+                +struct.pack(">HH", fragmentIndex, fragmentCount)
+            )
+            self._runner.secureNet.sendToSecure(
+                VPN_PACKET_FLAG + fragmentHeader + block,
+                node
+            )
 
     async def handle(self, data:bytes, _addr:tuple[str, int]) -> None:
         if data.startswith(VPN_PACKET_FLAG):
             data = data[len(VPN_PACKET_FLAG):]
+        if data.startswith(VPN_FRAGMENT_FLAG):
+            if len(data) < VPN_FRAGMENT_HEADER_SIZE:
+                return
+            fragmentId = data[1:9]
+            fragmentIndex, fragmentCount = struct.unpack(">HH", data[9:13])
+            if fragmentCount == 0 or fragmentIndex >= fragmentCount:
+                return
+            fragmentKey = (_addr, fragmentId)
+            receivedCount, fragments = self._receivedFragments.get(
+                fragmentKey,
+                (fragmentCount, {}),
+            )
+            if receivedCount != fragmentCount:
+                self._receivedFragments.pop(fragmentKey, None)
+                return
+            fragments[fragmentIndex] = data[VPN_FRAGMENT_HEADER_SIZE:]
+            if len(fragments) < fragmentCount:
+                self._receivedFragments[fragmentKey] = (fragmentCount, fragments)
+                return
+            data = b"".join(fragments[index] for index in range(fragmentCount))
+            self._receivedFragments.pop(fragmentKey, None)
         self._tunDevice.write(data)
 
     async def begin(self) -> None:

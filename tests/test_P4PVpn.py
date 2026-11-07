@@ -119,7 +119,7 @@ async def testSecurePacketFromTunIsRoutedOverRealSecureNet():
     joiningVpn._virtualIpToNode[destIp] = remoteNode
     payload = b"hello-from-vpn"
 
-    await joiningVpn._onTunPacket(destIp, payload)
+    joiningVpn._onTunPacket(destIp, payload)
     await asyncio.sleep(0.2)
     await seedVpn.handle(VPN_PACKET_FLAG + payload, remoteNode.addr)
 
