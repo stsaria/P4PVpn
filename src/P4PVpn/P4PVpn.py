@@ -28,6 +28,7 @@ class P4PVpn(NetHandler):
         nodeGossiper:NodeGossiper,
         heartbeatIntervalSeconds:float=5.0,
         heartbeatTimeoutSeconds:float=5.0,
+        heartbeatAcceptFailureCount:int=3,
         networksNodePublicKeys:set[HashableEd25519PublicKey] | None=None,
         tunDevice:LinuxTunDevice | None=None,
         tunName:str="tun0"
@@ -36,12 +37,15 @@ class P4PVpn(NetHandler):
             raise ValueError("heartbeatIntervalSeconds > 0")
         if heartbeatTimeoutSeconds <= 0:
             raise ValueError("heartbeatTimeoutSeconds > 0")
+        if heartbeatAcceptFailureCount <= 0:
+            raise ValueError("heartbeatAcceptFailureCount > 0")
 
         self._runner:P4PRunner = runner
         self._nodeGossiper:NodeGossiper = nodeGossiper
         self._networksNodePublicKeys:set[HashableEd25519PublicKey] = set(networksNodePublicKeys or ())
         self._heartbeatIntervalSeconds:float = heartbeatIntervalSeconds
         self._heartbeatTimeoutSeconds:float = heartbeatTimeoutSeconds
+        self._heartbeatAcceptFailureCount:int = heartbeatAcceptFailureCount
         self._heartbeatTasks:dict[tuple[str, int], Task[None]] = {}
         self._secureConnectionTasks:dict[tuple[str, int], Task[None]] = {}
         self._virtualIpToNode:dict[str, NodeIdentify] = {}
@@ -163,11 +167,16 @@ class P4PVpn(NetHandler):
             )
 
     async def _heartbeat(self, node:NodeIdentify) -> None:
-        while await self._runner.pingPongNet.ping(
-            node.addr,
-            timeoutSeconds=self._heartbeatTimeoutSeconds
-        ) is not None:
-            await asyncio.sleep(self._heartbeatIntervalSeconds)
+        i = 0
+        while (i < self._heartbeatAcceptFailureCount) and (node.addr in self._heartbeatTasks):
+            i += 1
+            if await self._runner.pingPongNet.ping(
+                node.addr,
+                timeoutSeconds=self._heartbeatTimeoutSeconds
+            ) is not None:
+                await asyncio.sleep(self._heartbeatIntervalSeconds)
+                i = 0
+
         virtualIp = AddrConverter.ed25519PublicKeyToIp(node.hashableEd25519PublicKey)
         if self._virtualIpToNode.get(virtualIp) == node:
             self._virtualIpToNode.pop(virtualIp, None)
@@ -178,6 +187,7 @@ class P4PVpn(NetHandler):
             node.hashableEd25519PublicKey.publicKeyBytes.hex(),
         )
         self._runner.secureNet.bye(node)
+        self._nodeGossiper.deleteNode(node)
 
     def _onTunPacket(self, destIp:str, packet:bytes) -> None:
         node = self._virtualIpToNode.get(destIp)
@@ -190,7 +200,7 @@ class P4PVpn(NetHandler):
         )
 
         if node is None:
-            self._logger.warning("No VPN peer for destination %s", destIp)
+            self._logger.debug("No VPN peer for destination %s", destIp)
             return
             
         maxPayloadSize = (

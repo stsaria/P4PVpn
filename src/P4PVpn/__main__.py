@@ -120,8 +120,10 @@ def _ensureConfigFile(path:Path) -> None:
                 "nodeStateFile": "p4pvpn-nodes.json",
                 "nodeStateIntervalSeconds": 10,
                 "heartbeatIntervalSeconds": 5,
-                "heartbeatTimeoutSeconds": 5,
-                "listenHost": "127.0.0.1",
+                "heartbeatTimeoutSeconds": 2,
+                "heartbeatAcceptFailureCount": 3,
+                "listenHostV4": "127.0.0.1",
+                "listenHostV6": "::",
                 "listenPort": 0,
                 "logLevel": "INFO",
                 "bootstrapNodes": [],
@@ -177,10 +179,12 @@ def createArgumentParser() -> argparse.ArgumentParser:
     parser.add_argument("--bootstrapNodePublicKey", action="append", type=_parsePublicKey, default=[])
     parser.add_argument("--peerPublicKey", action="append", type=_parsePublicKey, default=[])
     parser.add_argument("--privateKey", type=_parsePrivateKey, default=None)
-    parser.add_argument("--listenHost", default="127.0.0.1")
+    parser.add_argument("--listenHostV4", default="0.0.0.0")
+    parser.add_argument("--listenHostV6", default="::")
     parser.add_argument("--listenPort", type=int, default=0)
     parser.add_argument("--heartbeatIntervalSeconds", type=float, default=5.0)
     parser.add_argument("--heartbeatTimeoutSeconds", type=float, default=5.0)
+    parser.add_argument("--heartbeatAcceptFailureCount", type=int, default=3)
     parser.add_argument("--logLevel", default="INFO", choices=("DEBUG", "INFO", "WARNING", "ERROR"))
     return parser
 
@@ -195,10 +199,12 @@ def _applyConfig(args:argparse.Namespace) -> argparse.Namespace:
         "tunName",
         "nodeStateIntervalSeconds",
         "privateKey",
-        "listenHost",
+        "listenHostV4",
+        "listenHostV6",
         "listenPort",
         "heartbeatIntervalSeconds",
         "heartbeatTimeoutSeconds",
+        "heartbeatAcceptFailureCount",
         "logLevel",
     ):
         if name in config:
@@ -267,7 +273,8 @@ async def amain(
     )
     runner = P4PRunner(
         ed25519Signer=args.privateKey,
-        netV4ListeningAddr=(args.listenHost, args.listenPort),
+        netV4ListeningAddr=(args.listenHostV4, args.listenPort),
+        netV6ListeningAddr=(args.listenHostV6, args.listenPort),
     )
     nodeGossiper = NodeGossiper(
         runner

@@ -1,12 +1,14 @@
 {
   "privateKeyFile": "p4pvpn-private-key",
   "tunName": "tun0",
-  "listenHost": "0.0.0.0",
+  "listenHostV4": "0.0.0.0",
+  "listenHostV6": "::",
   "listenPort": 5000,
   "nodeStateFile": "p4pvpn-nodes.json",
   "nodeStateIntervalSeconds": 10,
   "heartbeatIntervalSeconds": 5,
   "heartbeatTimeoutSeconds": 5,
+  "heartbeatAcceptFailureCount": 3,
   "logLevel": "INFO",
   "bootstrapNodes": [
     {
