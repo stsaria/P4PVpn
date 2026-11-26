@@ -55,7 +55,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install build "Nuitka[onefile]"
-          pip install git+https://github.com/stsaria/P4PCore.git@d
+          P4PCORE_REF=main
+          case "${GITHUB_REF_NAME}" in
+            *a*|*rc*) P4PCORE_REF=d ;;
+          esac
+          pip install "git+https://github.com/stsaria/P4PCore.git@${P4PCORE_REF}"
           pip install .
 
       - name: Build Python package
