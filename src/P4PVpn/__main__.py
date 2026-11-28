@@ -122,10 +122,11 @@ def _ensureConfigFile(path:Path) -> None:
                 "heartbeatIntervalSeconds": 5,
                 "heartbeatTimeoutSeconds": 2,
                 "heartbeatAcceptFailureCount": 3,
-                "listenHostV4": "127.0.0.1",
+                "listenHostV4": "0.0.0.0",
                 "listenHostV6": "::",
                 "listenPort": 0,
                 "logLevel": "INFO",
+                "magicStr": "P4P6",
                 "bootstrapNodes": [],
                 "vpnPeerNodes": [],
             },
@@ -185,6 +186,7 @@ def createArgumentParser() -> argparse.ArgumentParser:
     parser.add_argument("--heartbeatIntervalSeconds", type=float, default=5.0)
     parser.add_argument("--heartbeatTimeoutSeconds", type=float, default=5.0)
     parser.add_argument("--heartbeatAcceptFailureCount", type=int, default=3)
+    parser.add_argument("--magicStr", default="P4P6")
     parser.add_argument("--logLevel", default="INFO", choices=("DEBUG", "INFO", "WARNING", "ERROR"))
     return parser
 
@@ -206,6 +208,7 @@ def _applyConfig(args:argparse.Namespace) -> argparse.Namespace:
         "heartbeatTimeoutSeconds",
         "heartbeatAcceptFailureCount",
         "logLevel",
+        "magicStr"
     ):
         if name in config:
             setattr(args, name, config[name])
@@ -275,6 +278,7 @@ async def amain(
         ed25519Signer=args.privateKey,
         netV4ListeningAddr=(args.listenHostV4, args.listenPort),
         netV6ListeningAddr=(args.listenHostV6, args.listenPort),
+        magic=args.magicStr
     )
     nodeGossiper = NodeGossiper(
         runner
