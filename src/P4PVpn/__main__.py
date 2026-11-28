@@ -284,7 +284,7 @@ async def amain(
         runner
     )
     for node in registeredNodes:
-        nodeGossiper.addNode(node)
+        nodeGossiper.addNode(node, pingAndAddCallback=lambda _: None)
     vpn = P4PVpn(
         runner,
         nodeGossiper,
