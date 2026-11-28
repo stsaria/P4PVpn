@@ -73,7 +73,7 @@ async def testNodeDiscoveryEventStartsSecureHelloForAllowedPeer():
     await joiningVpn.begin()
 
     remoteNode = NodeIdentify(
-        ip=seedRunner.net._protocolV4.transport.get_extra_info("sockname")[0],
+        ip="127.0.0.1",
         port=seedRunner.net._protocolV4.transport.get_extra_info("sockname")[1],
         hashableEd25519PublicKey=seedRunner.ed25519Signer.publicKey,
     )
@@ -108,7 +108,7 @@ async def testSecurePacketFromTunIsRoutedOverRealSecureNet():
     await joiningVpn.begin()
 
     remoteNode = NodeIdentify(
-        ip=seedRunner.net._protocolV4.transport.get_extra_info("sockname")[0],
+        ip="127.0.0.1",
         port=seedRunner.net._protocolV4.transport.get_extra_info("sockname")[1],
         hashableEd25519PublicKey=seedRunner.ed25519Signer.publicKey,
     )
@@ -148,7 +148,7 @@ async def testHeartbeatFailureRemovesMappingAndDisconnects():
     await joiningVpn.begin()
 
     remoteNode = NodeIdentify(
-        ip=seedRunner.net._protocolV4.transport.get_extra_info("sockname")[0],
+        ip="127.0.0.1",
         port=seedRunner.net._protocolV4.transport.get_extra_info("sockname")[1],
         hashableEd25519PublicKey=seedRunner.ed25519Signer.publicKey,
     )
